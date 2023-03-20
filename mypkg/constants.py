@@ -5,4 +5,5 @@ from pathlib import Path
 _cur_dir = Path(__file__).parent
 RES_ROOT = Path(_cur_dir/"../results")
 DATA_ROOT = Path(_cur_dir/"../data")
-FIG_ROOT = Path(_cur_dir/"../fig")
+FIG_ROOT = Path(_cur_dir/"../figs")
+MIDRES_ROOT = Path(_cur_dir/"../mid_results")
