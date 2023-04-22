@@ -1,4 +1,5 @@
 # The file contains a LSTM net for prediction SGM parameters from PSD
+# only speed is constant
 
 import torch
 import torch.nn as nn
@@ -11,7 +12,8 @@ class LSTM_SGM(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, 
                  is_bidirectional=False, 
                 prior_bds=None, 
-                k=1):
+                k=1, 
+                dy_mask=[1, 1, 1, 1, 1, 1, 0]):
         super(LSTM_SGM, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -19,6 +21,8 @@ class LSTM_SGM(nn.Module):
         self.prior_bds = prior_bds
         self.is_bidirectional = is_bidirectional
         self.k = k
+        # 1 is dynamic, 0 is constant across time
+        self.dy_mask = torch.tensor(dy_mask)
 
         self.lstm = nn.LSTM(self.input_dim,
                             self.hidden_dim,
@@ -32,27 +36,29 @@ class LSTM_SGM(nn.Module):
             self.fc1 = nn.Linear(self.hidden_dim, 256)
             self.laynorm = nn.LayerNorm(self.hidden_dim)
         self.fc2 = nn.Linear(256, self.output_dim)
-        self.dropout = nn.Dropout(0.5)
+        self.dropout1 = nn.Dropout(0.5)
+        self.dropout2 = nn.Dropout(0.5)
             
 
     def forward(self, seq):
         """
         args:
-            seq: should be len_seg x n_batch x len_fs
+            seq: should be len_seq x n_batch x len_fs
         return:
-            x: x in original scale, should be len_seg x n_batch x output_dim (7)
+            x: x in original scale, should be len_seq x n_batch x output_dim (7)
         """
-        x, _ = self.lstm(seq) # len_seg x n_batch x len_fs
+        x, _ = self.lstm(seq) # len_seq x n_batch x len_fs
         x = self.laynorm(x)
-        #x = self.dropout(x)
+        #x = self.dropout1(x)
         x = F.relu(self.fc1(x))
-        #x = self.dropout(x)
-        x = self.fc2(x) # len_seg x n_batch x output_dim(7)
+        #x = self.dropout2(x)
+        x = self.fc2(x) # len_seq x n_batch x output_dim(7)
         
-        x = torch.transpose(x, 1, 0) #  n_batch x len_seg x output_dim(7)
-        x_last = x[:, :, -1].mean(axis=-1, keepdims=True).repeat(1, len(seq)).unsqueeze(-1) # n_batch x len_seg x 1
-        x_raw = torch.cat([x[:, :, :-1], x_last], dim=-1) #  n_batch x len_seg x output_dim(7)
-        x_raw = x_raw.transpose(1, 0) # len_seg x n_batch x output_dim(7)
+        x_c = x.mean(axis=0, keepdims=True).repeat(len(seq), 1, 1)
+        one_mat = torch.ones_like(x);
+        mask_d = torch.stack([torch.ones_like(x[:, :, 0])*v for v in self.dy_mask], axis=2)
+        mask_c = one_mat - mask_d;
+        x_raw = x * mask_d + x_c * mask_c;
         
         # convert x_raw to x (original sgm parameters)
         x = self.raw2theta(x_raw)

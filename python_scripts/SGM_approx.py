@@ -6,12 +6,18 @@
 # In[1]:
 
 
+run_python_script = True
+
+
+# In[2]:
+
+
 import sys
 sys.path.append("../mypkg")
 from constants import RES_ROOT, FIG_ROOT, DATA_ROOT
 
 
-# In[2]:
+# In[3]:
 
 
 import numpy as np
@@ -21,11 +27,15 @@ import seaborn as sns
 from easydict import EasyDict as edict
 from tqdm import trange, tqdm
 import time
+import multiprocessing as mp
+from tqdm import tqdm
 
-plt.style.use(FIG_ROOT/"base.mplstyle")
+if not run_python_script:
+    plt.style.use(FIG_ROOT/"base.mplstyle")
+    get_ipython().run_line_magic('matplotlib', 'inline')
 
 
-# In[31]:
+# In[24]:
 
 
 
@@ -34,12 +44,12 @@ import models.mlp
 importlib.reload(models.mlp)
 
 
-# In[32]:
+# In[25]:
 
 
 from utils.reparam import theta2raw_torch, raw2theta_torch, raw2theta_np
 from spectrome import Brain
-from sgm.sgm_fixed import SGM
+from sgm.sgm import SGM
 from utils.misc import save_pkl, save_pkl_dict2folder, load_pkl, load_pkl_folder2dict, delta_time
 from models.mlp import SGMnet
 
@@ -52,20 +62,15 @@ import torch
 import torch.nn as nn
 from torch.functional import F
 from torch.optim.lr_scheduler import ExponentialLR
+from torch.distributions.multivariate_normal import MultivariateNormal
+
 
 torch.set_default_dtype(torch.float64)
 if torch.cuda.is_available():
-    torch.cuda.set_device(2)
     torch.set_default_tensor_type(torch.cuda.DoubleTensor)
     torch.backends.cudnn.benchmark = True
 else:
     torch.set_default_tensor_type(torch.DoubleTensor)
-
-
-# In[50]:
-
-
-run_python_script = True
 
 
 # In[ ]:
@@ -76,7 +81,7 @@ run_python_script = True
 
 # ## Data, fn and paras
 
-# In[51]:
+# In[7]:
 
 
 # Load the Connectome
@@ -87,7 +92,7 @@ brain.bi_symmetric_c()
 brain.reduce_extreme_dir()
 
 
-# In[52]:
+# In[8]:
 
 
 # load the dataset to get the freqs in real data (Apr 2, 2023)
@@ -101,7 +106,7 @@ ROIs_order = np.array(file2read.variables["regionx"][:])
 file2read.close()
 
 
-# In[53]:
+# In[9]:
 
 
 # some constant parameters for this file
@@ -123,8 +128,10 @@ paras.C = brain.reducedConnectome
 paras.D = brain.distance_matrix
 paras.freqs = freqs
 
+sgmmodel = SGM(paras.C, paras.D, paras.freqs)
 
-# In[54]:
+
+# In[10]:
 
 
 # running parameters
@@ -137,9 +144,21 @@ paras_run.k = 0.15 # the parameter for reparameterization in logistic
 paras_run.sd = 10 # The std to generate SGM parameters in raw scale (R)
 
 
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
+
 # ## Generate simulated data
 
-# In[55]:
+# In[11]:
 
 
 if not run_python_script:
@@ -156,7 +175,7 @@ if not run_python_script:
         plt.xlabel(paras.names[ix])
 
 
-# In[10]:
+# In[12]:
 
 
 if not run_python_script:
@@ -170,45 +189,88 @@ if not run_python_script:
     plt.close()
 
 
-# In[10]:
+# In[13]:
+
+
+# the function to generate PSD with SGM
+def get_psd(cur_sgm):
+    cur_PSD = sgmmodel.run_local_coupling_forward(cur_sgm)
+    cur_PSD = cur_PSD[:68, :]
+    return cur_PSD
+
+
+# In[14]:
+
+
+# demo of PSD
+if __name__ == "__main__":
+    if not run_python_script:
+        sgm_params_raw = np.random.randn(100, 7)*paras_run.sd
+        sgm_paramss = raw2theta_np(sgm_params_raw, paras.prior_bds, k=paras_run.k)
+        
+        num_cores = 20
+        with mp.Pool(num_cores) as pool:
+            PSDs = list(tqdm(pool.imap(get_psd, sgm_paramss), total=sgm_paramss.shape[0]))
+        PSDs = np.array(PSDs)
+
+
+# In[15]:
 
 
 if not run_python_script:
-    sgm_params_raw = np.random.randn(10000, 7)*paras_run.sd
-    sgm_paramss = raw2theta_np(sgm_params_raw, paras.prior_bds, k=paras_run.k)
-    
-    sgmmodel = SGM(paras.C, paras.D, paras.freqs)
-    PSDs = []
-    for cur_sgm in tqdm(sgm_paramss):
-        cur_PSD = sgmmodel.run_local_coupling_forward(cur_sgm)
-        cur_PSD = cur_PSD[:68, :]
-        PSDs.append(cur_PSD)
-        
-    simu_sgm_data = edict()
-    simu_sgm_data.PSDs = np.array(PSDs)
-    simu_sgm_data.sgm_paramss =  sgm_paramss
-    simu_sgm_data.freqs = paras.freqs
-    save_pkl_dict2folder(RES_ROOT/"simu_sgm_data_ind", simu_sgm_data, is_force=True)
+    for ix in range(100):
+        dat = PSDs[ix]
+        dat_std = (dat-dat.mean(axis=-1, keepdims=True))/dat.std(axis=-1, keepdims=True)
+        seq = dat_std.mean(axis=0)
+        plt.plot(dat_std.mean(axis=0))
 
 
-# In[11]:
+# In[20]:
 
 
 if not run_python_script:
-    sgm_params_raw = np.random.randn(1000, 7)*paras_run.sd
-    sgm_paramss = raw2theta_np(sgm_params_raw, paras.prior_bds, k=paras_run.k)
-    
-    sgmmodel = SGM(paras.C, paras.D, paras.freqs)
-    PSDs = []
-    for cur_sgm in tqdm(sgm_paramss):
-        cur_PSD = sgmmodel.run_local_coupling_forward(cur_sgm)
-        cur_PSD = cur_PSD[:68, :]
-        PSDs.append(cur_PSD)
+    ix = 10
+    dat =PSDs[ix]
+    dat_std = (dat-dat.mean(axis=-1, keepdims=True))/dat.std(axis=-1, keepdims=True)
+    for ix in range(68):
+        plt.plot(dat_std[ix])
+
+
+# In[14]:
+
+
+if __name__ == "__main__":
+    if not run_python_script:
+        sgm_params_raw = np.random.randn(100000, 7)*paras_run.sd
+        sgm_paramss = raw2theta_np(sgm_params_raw, paras.prior_bds, k=paras_run.k)
         
-    simu_sgm_data = edict()
-    simu_sgm_data.PSDs_test = np.array(PSDs)
-    simu_sgm_data.sgm_paramss_test =  sgm_paramss
-    save_pkl_dict2folder(RES_ROOT/"simu_sgm_data_ind", simu_sgm_data, is_force=False)
+        num_cores = 20
+        with mp.Pool(num_cores) as pool:
+            PSDs = list(tqdm(pool.imap(get_psd, sgm_paramss), total=sgm_paramss.shape[0]))
+            
+        simu_sgm_data = edict()
+        simu_sgm_data.PSDs = np.array(PSDs)
+        simu_sgm_data.sgm_paramss =  sgm_paramss
+        simu_sgm_data.freqs = paras.freqs
+        save_pkl_dict2folder(RES_ROOT/"simu_sgm_data_ind_large", simu_sgm_data, is_force=True)
+
+
+# In[15]:
+
+
+if __name__ == "__main__":
+    if not run_python_script:
+        sgm_params_raw = np.random.randn(10000, 7)*paras_run.sd
+        sgm_paramss = raw2theta_np(sgm_params_raw, paras.prior_bds, k=paras_run.k)
+        
+        num_cores = 20
+        with mp.Pool(num_cores) as pool:
+            PSDs = list(tqdm(pool.imap(get_psd, sgm_paramss), total=sgm_paramss.shape[0]))
+            
+        simu_sgm_data = edict()
+        simu_sgm_data.PSDs_test = np.array(PSDs)
+        simu_sgm_data.sgm_paramss_test =  sgm_paramss
+        save_pkl_dict2folder(RES_ROOT/"simu_sgm_data_ind_large", simu_sgm_data, is_force=True)
 
 
 # In[ ]:
@@ -219,14 +281,20 @@ if not run_python_script:
 
 # ## Train the model
 
-# In[11]:
+# In[ ]:
 
 
 from torch.utils.data import DataLoader, Dataset
-simu_sgm_data = load_pkl_folder2dict(RES_ROOT/"simu_sgm_data_ind")
+simu_sgm_data = load_pkl_folder2dict(RES_ROOT/"simu_sgm_data_ind_large");
 
 
-# In[18]:
+# In[ ]:
+
+
+
+
+
+# In[12]:
 
 
 class MyDataset(Dataset):
@@ -276,23 +344,7 @@ class MyDataset(Dataset):
             return self.X, self.Y
 
 
-# In[19]:
-
-
-def evaluate(data, net, loss_fn=None):
-    X_test, Y_test = data
-    if loss_fn is None:
-        loss_fn = nn.MSELoss()
-    net.eval()
-    with torch.no_grad():
-        Y_test_pred = net(X_test)
-        loss = loss_fn(Y_test, Y_test_pred)
-
-    net.train()
-    return loss.item()
-
-
-# In[20]:
+# In[14]:
 
 
 def weighted_mse_loss(pred, target, ws=None):
@@ -313,16 +365,53 @@ def weighted_mse_loss(pred, target, ws=None):
     return torch.mean((pred-target)**2 * ws)
 
 
-# In[43]:
+# In[15]:
+
+
+def cos_simi_loss(input_, target):
+    """
+    Calculates the cosine similarity loss between the input and target tensors.
+    
+    Args:
+    input_ (torch.Tensor): The input tensor.
+    target (torch.Tensor): The target tensor.
+    
+    Returns:
+    torch.Tensor: The negative mean of the cosine similarity loss.
+    """
+    fn = nn.CosineSimilarity(dim=-1)
+    losses = fn(input_, target)
+    return - losses.mean()
+
+
+# In[37]:
+
+
+def evaluate(test_data_loader, net, loss_fn=None):
+    if loss_fn is None:
+        loss_fn = nn.MSELoss()
+    net.eval()
+    losses = []
+    with torch.no_grad():
+        for X_batch, Y_batch in test_data_loader:
+            Y_batch_pred = net(X_batch)
+            loss = loss_fn(Y_batch, Y_batch_pred)
+            losses.append(loss.item())
+    net.train()
+    return np.mean(losses)
+
+
+# In[42]:
 
 
 paras_sgm_net = edict()
 paras_sgm_net.batchsize = 512
-paras_sgm_net.nepoch = 6000
-paras_sgm_net.loss_out = 100
+paras_sgm_net.nepoch = 1200
+paras_sgm_net.loss_out = 20
+paras_sgm_net.lr_step = 300
 
 
-# In[44]:
+# In[43]:
 
 
 # the data loader for training and testing
@@ -330,20 +419,22 @@ train_data = MyDataset(simu_sgm_data.sgm_paramss, simu_sgm_data.PSDs)
 train_data_loader = DataLoader(train_data, batch_size=paras_sgm_net.batchsize, shuffle=True)
 
 test_data = MyDataset(simu_sgm_data.sgm_paramss_test, simu_sgm_data.PSDs_test)
+test_data_loader = DataLoader(test_data, batch_size=paras_sgm_net.batchsize, shuffle=False)
 
 
-# In[48]:
+# In[44]:
 
 
 # the network
 sgm_net = SGMnet(nroi=68, nfreq=len(paras.freqs))
 loss_fn = nn.MSELoss()
+# We can use Pearsons R as loss, but let me try this later (on Apr 6, 2023)
 loss_fn = weighted_mse_loss
 optimizer = torch.optim.Adam(sgm_net.parameters(), lr=1e-3, weight_decay=0)
-scheduler = ExponentialLR(optimizer, gamma=0.50, verbose=True)
+scheduler = ExponentialLR(optimizer, gamma=0.10, verbose=True)
 
 
-# In[49]:
+# In[45]:
 
 
 # training
@@ -370,13 +461,12 @@ for ie in range(paras_sgm_net.nepoch):
         
         loss_cur.append(loss.item())
         
-    if ie % 1000 == 999:
+    if ie % paras_sgm_net.lr_step == (paras_sgm_net.lr_step-1):
         scheduler.step()
-
     if ie % paras_sgm_net.loss_out == (paras_sgm_net.loss_out-1):
     
         losses.append(np.mean(loss_cur))
-        losses_test.append(evaluate(test_data["all"], sgm_net))
+        losses_test.append(evaluate(test_data_loader, sgm_net))
         print(f"At epoch {ie+1}/{paras_sgm_net.nepoch},"
               f"the losses are {losses[-1]:.5f} (train)"
               f" and {losses_test[-1]:.5f} (test). "
@@ -398,29 +488,22 @@ if not run_python_script:
 
 # ## Evaluate and save
 
-# In[34]:
-
-
-X_test, Y_test = train_data["all"]
-sgm_net.eval()
-with torch.no_grad():
-    Y_pred = sgm_net(X_test)
-
-
 # In[44]:
 
 
+
+
 if not run_python_script:
-    idx = 200
+    idx = 313
     curY_t = Y_test[idx]
     curY_p = Y_pred[idx]
     plt.figure(figsize=[20, 10])
     plt.subplot(221)
-    plt.title("True")
+    plt.title("Prediction")
     for iy in range(68):
         plt.plot(curY_p[iy, :])
     plt.subplot(222)
-    plt.title("Prediction")
+    plt.title("True")
     for iy in range(68):
         plt.plot(curY_t[iy, :])
         #plt.plot(torch.abs(curY_p[iy, :]- curY_t[iy, :]))
@@ -440,17 +523,17 @@ trained_model.paras = paras_sgm_net
 trained_model.loss = losses
 trained_model.loss_test = losses_test
 trained_model.freqs = paras.freqs
-save_pkl_dict2folder(RES_ROOT/"SGM_net", trained_model, is_force=True)
+save_pkl_dict2folder(RES_ROOT/"SGM_net_large", trained_model, is_force=True)
 
 
-# In[27]:
+# In[41]:
 
 
 if not run_python_script:
-    trained_model = load_pkl_folder2dict(RES_ROOT/"SGM_net", excluding=["opt*"])
+    trained_model = load_pkl_folder2dict(RES_ROOT/"SGM_net_large", excluding=["opt*"])
 
 
-# In[38]:
+# In[43]:
 
 
 if not run_python_script:
@@ -459,7 +542,13 @@ if not run_python_script:
     with torch.no_grad():
         Y_pred = trained_model.model(X_test)
     loss_fn = nn.MSELoss()
-    loss_fn(Y_test, Y_pred)
+    print(loss_fn(Y_test, Y_pred))
+
+
+# In[ ]:
+
+
+
 
 
 # In[ ]:

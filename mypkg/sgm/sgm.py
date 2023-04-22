@@ -23,13 +23,13 @@ def network_transfer_local(C, D, parameters, w):
 
     
     parameters = np.asarray(parameters)
-    tau_e = parameters[0]
-    tau_i = parameters[1]
-    tauC =  parameters[2]
-    speed = parameters[3]
-    alpha = parameters[4]
-    gii =   parameters[5]  
-    gei =   parameters[6]  
+    alpha = parameters[0]
+    gei =   parameters[1]  
+    gii =   parameters[2]  
+    tau_e = parameters[3]
+    tauG =  parameters[4]
+    tau_i = parameters[5]
+    speed = parameters[6]
     gee = 1
     
     # Defining some other parameters used:
@@ -65,7 +65,7 @@ def network_transfer_local(C, D, parameters, w):
 #     # Cortical model
     Fe = np.divide(1 / tau_e ** 2, (1j * w + 1 / tau_e) ** 2)
     Fi = np.divide(1 / tau_i ** 2, (1j * w + 1 / tau_i) ** 2)
-    FG = np.divide(1 / tauC ** 2, (1j * w + 1 / tauC) ** 2)
+    FG = np.divide(1 / tauG ** 2, (1j * w + 1 / tauG) ** 2)
 
     Hed = (1 + (Fe * Fi * gei)/(tau_e * (1j * w + Fi * gii/tau_i)))/(1j * w + Fe * gee/tau_e + (Fe * Fi * gei)**2/(tau_e * tau_i * (1j * w + Fi * gii / tau_i)))
     
@@ -75,7 +75,7 @@ def network_transfer_local(C, D, parameters, w):
 
 
 #     q1 = (1j * w + 1 / tau_e * Fe * eigenvalues)
-    q1 = (1j * w + 1 / tauC * FG * eigenvalues)
+    q1 = (1j * w + 1 / tauG * FG * eigenvalues)
     qthr = zero_thr * np.abs(q1[:]).max()
     magq1 = np.maximum(np.abs(q1), qthr)
     angq1 = np.angle(q1)
@@ -141,13 +141,7 @@ class SGM:
         eigenvectors = np.asarray(eigenvectors)
         model_out = np.transpose(np.asarray(model_out))
         
-        model_out_band = model_out[:68, self.freqband]
-        #model_out_band_sum = np.sum(model_out_band,axis = 1)
-        #model_out_band_sum_norm = model_out_band_sum/np.linalg.norm(model_out_band_sum) # spatial feature on the specific band
-    
-        return model_out,  model_out_band
+        return model_out
         # model_out: estimated PSD, raw
-        # model_out_band: estimated PSD along selected band
-        #return model_out, model_out_band_sum_norm, model_out_band, frequency_response, eigenvalues, eigenvectors
         
         
