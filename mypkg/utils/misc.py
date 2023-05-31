@@ -2,7 +2,15 @@ import numpy as np
 import pickle
 from easydict import EasyDict as edict
 import time
-
+def mag2db(y):
+    """Convert magnitude response to decibels for a simple array.
+    Args:
+        y (numpy array): Power spectrum, raw magnitude response. no squared
+    Returns:
+        dby (numpy array): Power spectrum in dB
+    """
+    dby = 20 * np.log10(y)
+    return dby
 
 def delta_time(t):
     """Return the time diff from t
@@ -69,3 +77,4 @@ def save_pkl(fil, result, is_force=False, verbose=True):
             print(f"{fil} exists! Use is_force=True to save it anyway")
         else:
             pass
+

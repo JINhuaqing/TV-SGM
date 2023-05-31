@@ -311,6 +311,8 @@ class MyDataset(Dataset):
             X = torch.tensor(X)
         if not isinstance(Y, torch.Tensor):
             Y = torch.tensor(Y)
+        # to dB scale
+        Y = 20 * torch.log10(Y)
         if is_std:
             # here I only divide by std of Y to keep the spatial features
             # In fact, it did not work for SGM to real MEG, so let me 

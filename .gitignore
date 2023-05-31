@@ -1,5 +1,7 @@
 data/
 results/
+mid_results/
 __pycache__
 .ipynb_checkpoints
 Untitle*
+*/logs
