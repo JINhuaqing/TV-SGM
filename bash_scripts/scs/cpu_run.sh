@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --mem=200gb                          # Job memory request
 #SBATCH --partition=long                    # Run on partition "dgx" (e.g. not the default partition called "long")
-#SBATCH --output=logs/LSTM-%x.out
-#SBATCH -J wmse_geialpha_stat
+#SBATCH --output=logs/LSTM-wmse_gei%x.out
+#SBATCH -J alpha_stat
 #SBATCH --ntasks=30
 
 

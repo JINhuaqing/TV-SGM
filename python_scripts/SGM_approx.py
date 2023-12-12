@@ -32,7 +32,6 @@ from tqdm import tqdm
 
 if not run_python_script:
     plt.style.use(FIG_ROOT/"base.mplstyle")
-    get_ipython().run_line_magic('matplotlib', 'inline')
 
 
 # In[24]:
