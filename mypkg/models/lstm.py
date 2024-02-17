@@ -60,9 +60,10 @@ class LSTM_SGM(nn.Module):
         mask_c = one_mat - mask_d;
         x_raw = x * mask_d + x_c * mask_c;
         
+        loss_pen = torch.diff(x_raw, axis=0).abs().mean(axis=(0, 1))
         # convert x_raw to x (original sgm parameters)
         x = self.raw2theta(x_raw)
-        return x
+        return x, loss_pen
     
     def raw2theta(self, thetas_raw, k=None):
         """transform reparameterized theta to orignal theta

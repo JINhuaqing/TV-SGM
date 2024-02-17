@@ -1,19 +1,20 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# Here, I test whether my LSTM net works or not to estimate SGM parameters 
-# 
-# Now I run the real data from Parul (Apr 2, 2023)
+# Now I run the real data (Ctrl data in AD_vs_Ctrl dataset)
 # 
 # Convert to dB Scale
-
-# In[12]:
-
-
-RUN_PYTHON_SCRIPT = False
-
+# 
+# - 由于现在我处理的ctrl的spectrogram的freqs pts和eye MEG data 一样，所以你可以用SGM_net_large_eye_close来simulate PSD。
+# - 但是，顺序是不一样的，我用的是36-MEG data的顺序训练的这个net。
 
 # In[1]:
+
+
+RUN_PYTHON_SCRIPT = True
+
+
+# In[2]:
 
 
 import sys
@@ -21,7 +22,7 @@ sys.path.append("../mypkg")
 from constants import RES_ROOT, FIG_ROOT, DATA_ROOT
 
 
-# In[2]:
+# In[3]:
 
 
 import numpy as np
@@ -36,15 +37,11 @@ from joblib import Parallel, delayed
 plt.style.use(FIG_ROOT/"base.mplstyle")
 
 
-# In[3]:
-
-
-import importlib
-import models.lstm
-importlib.reload(models.lstm)
-
-
 # In[4]:
+
+
+
+# In[5]:
 
 
 from utils.reparam import theta2raw_torch, raw2theta_torch, raw2theta_np
@@ -54,11 +51,10 @@ from utils.stable import paras_stable_check
 from utils.misc import save_pkl, save_pkl_dict2folder, load_pkl, load_pkl_folder2dict, delta_time
 from models.lstm import LSTM_SGM
 from models.loss import  weighted_mse_loss, reg_R_loss, lin_R_loss, lin_R_fn, reg_R_fn
-from models.model_utils import weights_init
 from utils.standardize import std_mat, std_vec
 
 
-# In[5]:
+# In[6]:
 
 
 # pkgs for pytorch ( Mar 27, 2023) 
@@ -67,24 +63,16 @@ import torch.nn as nn
 from torch.functional import F
 from torch.optim.lr_scheduler import ExponentialLR
 
-torch.set_default_dtype(torch.float32)
+torch.set_default_dtype(torch.float64)
 if torch.cuda.is_available():
-    torch.set_default_device("cuda")
+    torch.cuda.set_device(2)
+    torch.set_default_tensor_type(torch.cuda.DoubleTensor)
     torch.backends.cudnn.benchmark = True
 else:
-    torch.set_default_device("cpu")
-
-
-seed = 1
-import random
-random.seed(seed)
-np.random.seed(seed);
-torch.manual_seed(seed)
-torch.use_deterministic_algorithms(True); 
-# In[ ]:
+    torch.set_default_tensor_type(torch.DoubleTensor)
 
 import argparse
-parser = argparse.ArgumentParser(description='run rnn on 36-meg data')
+parser = argparse.ArgumentParser(description='run rnn on ctrl data')
 parser.add_argument('--alpha', default=1, type=int, help='alpha indicator') 
 parser.add_argument('--gei', default=1, type=int, help='gei indicator') 
 parser.add_argument('--gii', default=1, type=int, help='gii indicator') 
@@ -96,31 +84,42 @@ args = parser.parse_args()
 
 dy_mask = [args.alpha, args.gei, args.gii, args.taue, args.tauG, args.taui, 0]
 
+# In[ ]:
+
 
 
 
 
 # # Data, fn and paras
 
-# In[6]:
-
-
-import netCDF4
-fils = list(DATA_ROOT.glob("*s100tp.nc")) # 300/150
-file2read = netCDF4.Dataset(fils[0], 'r')
-psd_all_full = np.array(file2read.variables["__xarray_dataarray_variable__"][:])
-psd_all_full = 10 * np.log10(psd_all_full) # to dB scale
-time_points = np.array(file2read.variables["timepoints"][:])
-freqs = np.array(file2read.variables["frequencies"][:])
-ROIs_order = np.array(file2read.variables["regionx"][:])
-
-rm_lim = 5
-psd_all_full = psd_all_full[:, :, rm_lim:-rm_lim, :]
-time_points = time_points[rm_lim:-rm_lim];
-file2read.close()
-
-
 # In[7]:
+
+
+# get order idx
+# idx from 36-MEG order to Ctrl-data order
+# org_order: ctrl data order
+# target_order: SGMnet order, SC order
+org_order = np.loadtxt(DATA_ROOT/"AD_vs_Ctrl_ts/roi_order.txt", dtype=str);
+target_order0 = np.loadtxt(DATA_ROOT/"DK_atlas_36MEG.txt", dtype=str);
+target_order = np.array([f"ctx-{roi_name.split('_')[1].lower()}h-{roi_name.split('_')[0].lower()}" for roi_name in target_order0[:68]]);
+org2target_idxs = np.array([np.where(org_order==roi)[0][0] for roi in target_order]);
+(org_order[org2target_idxs] == target_order).mean()
+
+
+# In[8]:
+
+
+psd_all_full0 = load_pkl(DATA_ROOT/"AD_vs_Ctrl_ts/spectrogram_scipy.pkl");
+
+psd_all_full = np.array([res["spectrogram"] for res in psd_all_full0]);
+psd_all_full = 10 * np.log10(psd_all_full) # to dB scale
+# make the ctrl data order is compatible to SGM net 
+psd_all_full = psd_all_full[:, org2target_idxs]
+time_points = psd_all_full0[0]["times"]
+freqs = psd_all_full0[0]["freqs"];
+
+
+# In[9]:
 
 
 # Load the Connectome
@@ -131,7 +130,7 @@ brain.bi_symmetric_c()
 brain.reduce_extreme_dir()
 
 
-# In[8]:
+# In[10]:
 
 
 # some constant parameters for this file
@@ -162,27 +161,15 @@ paras.freqs = freqs
 
 # # Train the model
 
-# In[9]:
+# In[11]:
 
 
-trained_model = load_pkl_folder2dict(RES_ROOT/"SGM_net_large", excluding=['opt*'])
+trained_model = load_pkl_folder2dict(RES_ROOT/"SGM_net_large_eye_close", excluding=['opt*'])
 sgm_net = trained_model.model;
-sgm_net.to(dtype=torch.get_default_dtype())
 sgm_net.eval();
 
 
-
-# In[13]:
-
-
-if not RUN_PYTHON_SCRIPT:
-    plt.plot(np.array(trained_model.loss)/10)
-    plt.plot(trained_model.loss_test)
-    #plt.xticks(np.arange(0, 120, 14));
-    plt.yscale("log")
-
-
-# In[14]:
+# In[12]:
 
 
 # functions to generate training sample (Apr 1, 2023)
@@ -250,40 +237,40 @@ def random_samples_rnn(X, Y=None, batchsize=1,
         
 
 
-# In[15]:
+# In[14]:
 
 
 def evaluate(all_data):
     num_sub, len_seq, _, _ = all_data.shape
-    all_data_raw = torch.tensor(all_data, dtype=torch.get_default_dtype()).transpose(1, 0)
+    all_data_raw = torch.tensor(all_data).transpose(1, 0)
     all_data_input = (all_data_raw - all_data_raw.mean(axis=-1, keepdims=True))/all_data_raw.std(axis=-1, keepdims=True);
     all_data_input = all_data_input.flatten(2);
     
-    Y_pred = rnn(all_data_input);
-    X_pred = sgm_net(Y_pred.flatten(0, 1));
+    with torch.no_grad():
+        Y_pred = rnn(all_data_input);
+        X_pred = sgm_net(Y_pred.flatten(0, 1));
     corrs = reg_R_fn(all_data_raw.flatten(0, 1), X_pred);
     corrs = corrs.reshape(len_seq, num_sub, -1).transpose(1, 0)
     return corrs.detach().numpy()
 
 
-# In[21]:
+# In[15]:
 
 
 paras_rnn = edict()
+# batchsize is not in fact used.
 paras_rnn.batchsize = 128
-paras_rnn.niter = 1000 #!!!! 500
+paras_rnn.niter = 500
 paras_rnn.loss_out = 5
 paras_rnn.eval_out = 20
 paras_rnn.clip = 1 # from 
-paras_rnn.lr_step = 300 #!!!! 10
-paras_rnn.gamma = 0.5 #!!!! 0.9
-paras_rnn.lr = 2e-4 
+paras_rnn.lr_step = 500 #!!!! 10
 
 paras_rnn.k = 1
 paras_rnn.hidden_dim = int(1024/1)
 paras_rnn.output_dim = 7
 paras_rnn.input_dim = 68*len(paras.freqs)
-paras_rnn.is_bidirectional = False
+paras_rnn.is_bidirectional = True #!!!!False
 paras_rnn.unstable_pen = 10000 # Whether to filter out the unstable sps or not, if 0 not, if large number, yes
 paras_rnn.loss_name = args.loss # linR, corr, wmse or mse
 #paras.names = ["alpha", "gei", "gii", "Taue", "TauG", "Taui", "Speed"]
@@ -291,33 +278,33 @@ paras_rnn.loss_name = args.loss # linR, corr, wmse or mse
 paras_rnn.dy_mask = dy_mask
 stat_part = "_".join(np.array(paras.names)[np.array(paras_rnn.dy_mask)==0][:-1])
 if len(stat_part) > 0:
-    folder_name = f"LSTM_simu_net_{paras_rnn.loss_name}_{stat_part}"; 
+    folder_name = f"LSTM_simu_net_ctrl_{paras_rnn.loss_name}_{stat_part}";
 else:
-    folder_name = f"LSTM_simu_net_{paras_rnn.loss_name}";
+    folder_name = f"LSTM_simu_net_ctrl_{paras_rnn.loss_name}";
 paras_rnn.save_dir = RES_ROOT/folder_name
 
-# delete a sig outlier
-psd_all = psd_all_full
-#  real data, should be num_sub x len_seq x nrois x nfreqs
-all_data = psd_all.transpose(3, 2, 0, 1);
 
-all_data_raw = torch.tensor(all_data, dtype=torch.get_default_dtype()).transpose(1, 0)
+psd_all = psd_all_full
+#  all_data is the real data, should be num_sub x len_seq x nrois x nfreqs
+#  or len_seq x nrois x nfreqs
+all_data = psd_all.transpose(0, 3, 1, 2)
+
+all_data_raw = torch.tensor(all_data).transpose(1, 0)
 all_data_input = (all_data_raw - all_data_raw.mean(axis=-1, keepdims=True))/all_data_raw.std(axis=-1, keepdims=True);
 all_data_input = all_data_input.flatten(2);
 
 
-# In[22]:
+# In[16]:
 
 
 rnn = LSTM_SGM(input_dim=paras_rnn.input_dim, 
                hidden_dim=paras_rnn.hidden_dim, 
                output_dim=paras_rnn.output_dim, 
                is_bidirectional=paras_rnn.is_bidirectional, 
-               prior_bds=torch.tensor(paras.prior_bds, dtype=torch.get_default_dtype()), 
+               prior_bds=torch.tensor(paras.prior_bds), 
                k = paras_rnn.k, 
                dy_mask = paras_rnn.dy_mask
 )
-rnn.apply(weights_init)
 if paras_rnn.loss_name.startswith("corr"):
     loss_fn = reg_R_loss
 elif paras_rnn.loss_name.startswith("linR"):
@@ -329,8 +316,8 @@ elif paras_rnn.loss_name.startswith("mse"):
 else:
     raise KeyError("No such loss")
 
-optimizer = torch.optim.AdamW(rnn.parameters(), lr=paras_rnn.lr, weight_decay=0)
-scheduler = ExponentialLR(optimizer, gamma=paras_rnn.gamma, verbose=True)
+optimizer = torch.optim.AdamW(rnn.parameters(), lr=2e-4, weight_decay=0)
+scheduler = ExponentialLR(optimizer, gamma=0.9, verbose=True)
 
 
 # In[23]:
@@ -346,7 +333,10 @@ sgm_net.eval()
 loss_add = 0
 for ix in range(paras_rnn.niter):
     rnn.train()
-    #X_seq = random_samples_rnn(all_data[24], 
+    # Here because the whole dataset is not large, 
+    # I use them as one batch
+    # Of course, you can use random_samples_rnn to draw 
+    # X_seq = random_samples_rnn(all_data, 
     #                           batchsize=paras_rnn.batchsize)
     X_seq = all_data_input
     # Zero the gradients
@@ -358,7 +348,7 @@ for ix in range(paras_rnn.niter):
                    X_pred)
     if paras_rnn.unstable_pen > 0:
         unstable_inds = paras_stable_check(theta_pred.flatten(0, 1).detach().numpy());
-        unstable_inds = torch.tensor(unstable_inds, dtype=torch.get_default_dtype()).reshape(*theta_pred.shape[:2])
+        unstable_inds = torch.tensor(unstable_inds).reshape(*theta_pred.shape[:2])
         loss_add = (paras_rnn.unstable_pen * unstable_inds.unsqueeze(-1) * theta_pred).mean();
     loss = loss_main + loss_add
     
@@ -396,31 +386,13 @@ for ix in range(paras_rnn.niter):
     
 
 
-# In[24]:
-
-
-if not RUN_PYTHON_SCRIPT:
-    plt.plot(losses[:])
-    #plt.yscale("log")
-
-
-# In[ ]:
-
-
-
-
 
 # # Save
 
-# In[25]:
+# In[32]:
 
 
-
-
-# In[26]:
-
-
-if  paras_rnn.save_dir.exists():
+if (paras_rnn.save_dir).exists():
     trained_model = load_pkl_folder2dict(paras_rnn.save_dir)
 else:
     trained_model = edict()
@@ -440,7 +412,7 @@ else:
 
 # # PSD 
 
-# In[27]:
+# In[21]:
 
 
 trained_model.model.eval()
@@ -450,13 +422,9 @@ sgm_paramss_est = Y_pred.cpu().numpy().transpose(1, 0, 2)
 trained_model.sgm_paramss_est = sgm_paramss_est
 save_pkl_dict2folder(paras_rnn.save_dir, trained_model, is_force=False)
 
+
 # In[ ]:
 
-
-
-
-
-# In[28]:
 
 # calculate rec PSD and save, only need once
 sgmmodel = SGM(paras.C, paras.D, paras.freqs)
@@ -470,7 +438,7 @@ for sgm_params_est in tqdm(trained_model.sgm_paramss_est):
         X_rec = _run_fn(sgm_params_est[0])
         X_rec = np.tile(X_rec, (len(sgm_params_est), 1, 1))
     else:
-        with Parallel(n_jobs=20) as parallel:
+        with Parallel(n_jobs=25) as parallel:
             X_rec = parallel(delayed(_run_fn)(param) for param in sgm_params_est)
     X_recs.append(X_rec)
     
@@ -480,7 +448,6 @@ save_pkl_dict2folder(paras_rnn.save_dir, trained_model, is_force=False)
 
 
 # In[ ]:
-
 
 
 
