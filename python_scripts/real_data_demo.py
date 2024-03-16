@@ -260,7 +260,7 @@ paras_rnn.unstable_pen = 10000 # Whether to filter out the unstable sps or not, 
 paras_rnn.loss_name = "wmse" # linR, corr, wmse or mse
 #paras.names = ["alpha", "gei", "gii", "Taue", "TauG", "Taui", "Speed"]
 # 1 dynamic, 0 static
-paras_rnn.dy_mask = [0, 0, 1, 1, 1, 1, 0] 
+paras_rnn.dy_mask = [1, 0, 1, 1, 0, 1, 0] 
 
 # delete a sig outlier
 psd_all = psd_all_full
