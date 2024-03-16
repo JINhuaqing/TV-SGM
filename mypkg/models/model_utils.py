@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import numpy as np
 
 def generate_position_encode(block_size, nfeature):
@@ -22,3 +23,25 @@ def generate_position_encode(block_size, nfeature):
     # to avoid the case when nfeature is odd
     pos_enc[:, 1::2] = torch.cos(position * div_term[:int(nfeature/2)])
     return pos_enc
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+        nn.init.constant_(m.bias.data, 0.0)
+    elif classname.find('LayerNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+    elif classname.find('LSTM') != -1 and not (classname.find('LSTM_SGM') != -1):
+        nn.init.normal_(m.weight_hh_l0.data, 0.0, 0.02)
+        nn.init.normal_(m.weight_ih_l0.data, 0.0, 0.02)
+        nn.init.constant_(m.bias_hh_l0.data, 0)
+        nn.init.constant_(m.bias_ih_l0.data, 0)
+        if m.bidirectional:
+            nn.init.normal_(m.weight_ih_l0_reverse.data, 0.0, 0.02)
+            nn.init.normal_(m.weight_hh_l0_reverse.data, 0.0, 0.02)
+            nn.init.constant_(m.bias_ih_l0_reverse.data, 0)
+            nn.init.constant_(m.bias_hh_l0_reverse.data, 0)
