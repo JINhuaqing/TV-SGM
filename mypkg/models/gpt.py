@@ -151,7 +151,7 @@ class myNet(nn.Module):
         for block in self.transformer.h:
             x = block(x)
         x = self.transformer.ln_f(x)
-        x = self.fc_out(x) # batchsize x len_seq x 7
+        x = self.fc_out(x) # batchsize x len_seq x target_dim
         
         x_c = x.mean(axis=1, keepdims=True).repeat(1, x.shape[1], 1);
         one_mat = torch.ones_like(x);

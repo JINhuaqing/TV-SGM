@@ -15,13 +15,17 @@ if not logger.hasHandlers():
 class SGM:
     """
     A SGM model for both FC and PSD forward
+    The output  PSD is be in abs magnitude (20log10(psd) to dB)!
+    The output FC has 0 diagonal.
     """
+
     def __init__(self, C, D, freqs, verbose=2):
         """args:
             C (array): sc matrix, nroi x nroi
             D (array): dist matrix, nroi x nroi
             freqs: the freqs to get the FC, in Hz. 
             verbose (int, optional): Verbosity level. Defaults to 2.
+
         """
         _set_verbose_level(verbose, logger)
         if isinstance(freqs, str):
@@ -38,7 +42,7 @@ class SGM:
         logger.info(f"Num of ROI is {C.shape[0]}.")
         logger.debug(f"Be careful about your input, freq should be in Hz!")
         logger.debug(f"All tau's params should be in second!")
-        logger.debug(f"The output  PSD is be in abs magnitude (20log10(psd) toi dB)!")
+        logger.debug(f"The output  PSD is be in abs magnitude (20log10(psd) to dB)!")
         
     def _get_lap_result(self, alpha, speed, freq):
         """Get the eig results from Laplaician matrix at give freq
@@ -76,8 +80,8 @@ class SGM:
         return eig_val, eig_vec
     
     def _get_psd_at_freq(self, params, freq):
-        """Network Transfer Function for spectral graph model for give freq w (in angular, not in Hz)
-           i.e. SGM forward function for a specific w
+        """Network Transfer Function for spectral graph model for give freq 
+           i.e. SGM forward function for a specific freq
     
         Args:
             params (dict): parameters for ntf, including alpha, gei, gii, taue, tauG, taui, speed
@@ -99,6 +103,13 @@ class SGM:
         taui = params1["taui"]
         speed = params1["speed"]
         gee = 1
+
+        # Reduce the params, 
+        # these number are from SBI-SGM paper (Fig 4C)
+        if gei is None: 
+            gei = 0.3
+        if gii is None:
+            gii = 1
         nroi = self.C.shape[0]
         w = 2 * np.pi * freq # from Hz to angular
         
@@ -202,7 +213,7 @@ class SGM:
             params (dict): Dictionary of a setting of parameters for the NTF model.
     
         Returns:
-            model_out(array): the modelled PSD from SGM model
+            model_out(array): the modelled PSD from SGM model, in abs magnitude (20log10(psd) to dB)!
     
         """
         model_out = []
