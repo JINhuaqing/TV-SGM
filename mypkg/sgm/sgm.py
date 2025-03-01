@@ -38,6 +38,13 @@ class SGM:
         self.C = C
         self.D = D
         self.freqs = freqs
+
+        self.param_names = ["alpha", "gei", "gii", "taue", "taug", "taui", "speed"]
+        self.param_names_fc = ["alpha", "taug", "speed"]
+        # default params, these numbers are from SBI-SGM paper (Fig 4C)
+        def_params = [0.55, 0.3, 1.0, 0.017, 0.007, 0.002, 15.0]
+        self.def_params = dict(zip(self.param_names, def_params))
+
         
         logger.info(f"Num of ROI is {C.shape[0]}.")
         logger.debug(f"Be careful about your input, freq should be in Hz!")
@@ -84,7 +91,7 @@ class SGM:
            i.e. SGM forward function for a specific freq
     
         Args:
-            params (dict): parameters for ntf, including alpha, gei, gii, taue, tauG, taui, speed
+            params (dict): parameters for ntf, including alpha, gei, gii, taue, taug, taui, speed
                               The tau's should in second.
             freq (float): frequency at which to calculate NTF, in Hz
     
@@ -92,9 +99,13 @@ class SGM:
             model_out (numpy asarray):  the psd at given freq
     
         """
-        params1 = {}
+        params1 = {k:None for k in self.param_names}
         for ky, v in params.items():
             params1[ky.lower()] = v
+        for ky in self.param_names:
+            if params1[ky] is None:
+                params1[ky] = self.def_params[ky]
+
         alpha = params1["alpha"]
         gei = params1["gei"]
         gii = params1["gii"]
@@ -104,12 +115,6 @@ class SGM:
         speed = params1["speed"]
         gee = 1
 
-        # Reduce the params, 
-        # these number are from SBI-SGM paper (Fig 4C)
-        if gei is None: 
-            gei = 0.3
-        if gii is None:
-            gii = 1
         nroi = self.C.shape[0]
         w = 2 * np.pi * freq # from Hz to angular
         
@@ -153,14 +158,16 @@ class SGM:
             fc(numpy asarray):  The FC for the given frequency (freq)
         """
         
-        params1 = {}
+        params1 = {k:None for k in self.param_names_fc}
         for ky, v in params.items():
             params1[ky.lower()] = v
+        for ky in self.param_names_fc:
+            if params1[ky] is None:
+                params1[ky] = self.def_params[ky]
         alpha = params1["alpha"]
         tauG = params1["taug"]
         speed = params1["speed"]
         w = 2*np.pi*freq # change from Hz to angular freq
-        nroi = self.C.shape[0]
         
         # Defining some other parameters used:
         zero_thr = 0.05 # in my paper, it is 0.01, but to make it consistent with PSD-SGM, I change it to 0.05

@@ -98,11 +98,11 @@ class ThetaTransform:
             prior_bds: an array with * x 2
             k: the steepness of the logistic fn
         """
-        if params_mask is None:
-            params_mask = [True]*len(SGM_prior_bds)
         if prior_bds is None:
             keys = ["alpha", "gei", "gii", "taue", "taug", "taui", "speed"]
             prior_bds = np.array([SGM_prior_bds[key] for key in keys])
+        if params_mask is None:
+            params_mask = [True]*len(prior_bds)
         
         self.prior_bds = np.array([prior_bds[i] for i in range(len(prior_bds)) if params_mask[i]])
         self.k = k

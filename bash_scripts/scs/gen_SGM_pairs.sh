@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=25
 #### Run on partition "dgx" (e.g. not the default partition called "long")
 ### long for CPU, gpu/dgx for CPU, dgx is slow
-#SBATCH --partition=gpu
+#SBATCH --partition=long
 #### Allocate 1 GPU resource for this job. 
 ##SBATCH --gres=gpu:teslav100:1   
 #SBATCH --output=logs/gen-sgm-pairs-%x-%j.out
